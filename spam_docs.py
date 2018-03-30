@@ -1,81 +1,113 @@
 import requests
 import uuid
 import logging
+from pydash import last, head
 
 import urllib2
 import re 
 from bs4 import BeautifulSoup 
+import json
 
 from time import sleep
 from datetime import datetime
 
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-url = 'www.test.com/'
-INTERVAL = 1 
-TIMES = 500
+js_regex = re.compile("var FB_PUB*")
 
 
-def parse_html_page(url):
-    """
-    Get raw HTML of url and create BeautifulSoup object
-    :param string url: website url
-    """
-    page = urllib2.urlopen(url)
-    return BeautifulSoup(page, 'html.parser')
+def find_ending_square_bracket(text):
+    bracket_stack = []
+    indexes_of_brackets = {}
     
+    for index, char in enumerate(text):
+        if char == '[':
+            bracket_stack.append(index)
+        if char == ']':
+            try: 
+                indexes_of_brackets[bracket_stack.pop()] = index
+            except IndexError: 
+                # There are an uneven number of 
+                # braces, dont care about the rest
+                break 
+            
+    
+    if not indexes_of_brackets:
+        raise ValueError("Could not find matching bracket in - {}".format(text))
+    
+    return indexes_of_brackets
+
+def get_answers_to_javascript_field(field_id, soup):
+    script_text = head(soup.find_all(name="script", text=js_regex))
+    script_text = str(script_text).decode('utf-8')
+    
+    script_text = script_text.split(" = ")[1]
+    
+    start = len(field_id) + script_text.find(field_id) + 1
+    
+    js_answers = script_text[start:]
+    js_answers = js_answers.replace("\n", "")[:-10]
+    
+    # Find out where the answers are in the script
+    bracket_indexes = find_ending_square_bracket(js_answers)
+    
+    
+    
+    answers = js_answers[start+1:end+1] # this is hackey, think of better
+    answers = json.loads(answers)
+    answer = answers[0]
+    
+
 def build_get_request(elements):
     """
     Build GET request params with random strings
     :param list html_fields: beautiful soup parsed html form elements
     """
     request_fields = ''
-    
+    rand_string = uuid.uuid4().hex
+
     for field in elements:
-        rand_string = uuid.uuid4().hex
-        field_name = field.attrs['name']
-        request_fields += field_name + "=" + rand_string + '&'
         
+        field_name = field.attrs['name']
+        field_id = last(field_name.split('.'))
+        
+        is_drop_down_question = field.findParent().attrs.get('role') == 'listitem'
+        
+        if is_drop_down_question:
+            # Drop down has to be one of the listed answers, not random
+            rand_string = get_answers_to_javascript_field(field_id, soup)
+            
+        request_fields += field_name + "=" + rand_string + '&'
+
     return request_fields[:-1]  # Remove extra '&' at end
 
-def send_request(url, second_interval, limit_times=None):
-    """
-    Send get request to url 
-    :param string url: url to send get request to
-    :param int second_interval: seconds to wait to send another request
-    :param limit_times None|int: number of times to send request - None is inf
-    """
-    
-    log = "{} - {} - {}"
-    send_request.counter = 0
-    
-    def _send():
-        response = requests.get(url)        
-        send_request.counter += 1
-        
-        logging.info(log.format(send_request.counter, datetime.now(), response.ok))
-        sleep(second_interval)
-        
-    if limit_times is None:
-        while True:
-            _send()
-    else:
-        for i in xrange(limit_times):
-            _send()
-    
-            
+
 if __name__ == "__main__":
+
+    #url = 'https://docs.google.com/forms/d/e/1FAIpQLSfuCdfkfq31Xsz6hsGFLviEna4_em2VVzCoJZIALduQs_NEeg/viewform?usp=sf_link'
+    url = 'https://docs.google.com/forms/d/e/1FAIpQLScTS37wZTmUPWTcdkEbtF5sHQIR-mRiRfR_u5KSxf2VucMeVQ/viewform?'
+    logging.basicConfig()
+    
+    for i in xrange(20000):
         
-    soup = parse_html_page(URL)
-    
-    # Find all form entry fields
-    elements = soup.find_all(attrs={"name": re.compile("entry.*")})
-    
-    request_fields = build_get_request(elements)
+        if i % 10 == 0:
+            # Refresh the page every 5 times
+            page = urllib2.urlopen(url)
+            soup =  BeautifulSoup(page, 'html.parser')
+
+        elements = soup.find_all(attrs={"name": re.compile("entry.*")})
+        request_fields = build_get_request(elements)
+
+        send_url = '/'.join(url.split("/")[:-1]) + "/formResponse?{}".format(request_fields)
+        response = requests.get(send_url)
         
-    # Combine url and request
-    send_url = '/'.join(URL.split("/")[:-1]) + "/formResponse?{}".format(request_fields)
-    
-    send_request(send_url, second_interval=INTERVAL, limit_times=TIMES)    
-    
+        keep_going = "U of L Confessions: Submissions" in response.content
+        logger.info(" {} - {} - {}".format(i, datetime.now(), keep_going))
+        
+        if not keep_going:
+            break
+        
+        sleep(7)
+
