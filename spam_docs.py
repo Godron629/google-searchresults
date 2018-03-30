@@ -33,7 +33,6 @@ def find_ending_square_bracket(text):
                 # braces, dont care about the rest
                 break 
             
-    
     if not indexes_of_brackets:
         raise ValueError("Could not find matching bracket in - {}".format(text))
     
@@ -52,8 +51,6 @@ def get_answers_to_javascript_field(field_id, soup):
     
     # Find out where the answers are in the script
     bracket_indexes = find_ending_square_bracket(js_answers)
-    
-    
     
     answers = js_answers[start+1:end+1] # this is hackey, think of better
     answers = json.loads(answers)
