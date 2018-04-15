@@ -22,3 +22,7 @@ if __name__ == "__main__":
 
     list_of_answers = js_answers['body'][0]['declarations'][0]['init']['elements'][1]['elements'][1]['elements']
     # figure out a way of identifying answers after parser, write some recursive filter maybe (or look one up)
+	# then iterate over lists and for each question, try to find an answer, if there are none, set my own
+	# OR
+	# remove the tag and use JSON.loads(), this might be easier but then I will need to identify
+	# which questions are a text area and which are not, which is difficult.
